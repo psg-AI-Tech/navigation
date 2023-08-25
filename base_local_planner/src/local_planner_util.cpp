@@ -104,6 +104,7 @@ bool LocalPlannerUtil::setPlan(const std::vector<geometry_msgs::PoseStamped>& or
 
 bool LocalPlannerUtil::getLocalPlan(const geometry_msgs::PoseStamped& global_pose, std::vector<geometry_msgs::PoseStamped>& transformed_plan) {
   //get the global plan in our frame
+    // 将全局路径转换到局部路径；并且只截取路径一部分(机器人周围一定范围内的路径)作为局部的目标路径   
   if(!base_local_planner::transformGlobalPlan(
       *tf_,
       global_plan_,

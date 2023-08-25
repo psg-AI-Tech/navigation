@@ -126,6 +126,7 @@ namespace base_local_planner {
       double sq_dist = 0;
 
       //we need to loop to a point on the plan that is within a certain distance of the robot
+    //   找到第一个距离机器人当前位置小于等于 sq_dist_threshold 的路径点，即costmap半径内的点/边界点，只是找到这个点
       while(i < (unsigned int)global_plan.size()) {
         double x_diff = robot_pose.pose.position.x - global_plan[i].pose.position.x;
         double y_diff = robot_pose.pose.position.y - global_plan[i].pose.position.y;

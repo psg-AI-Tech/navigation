@@ -63,6 +63,7 @@ namespace move_base {
     ros::NodeHandle private_nh("~");
     ros::NodeHandle nh;
 
+    //  枚举/定义了三种触发恢复行为的情况
     recovery_trigger_ = PLANNING_R;
 
     //get some parameters that will be global to the move base node
@@ -85,11 +86,13 @@ namespace move_base {
     private_nh.param("make_plan_add_unreachable_goal", make_plan_add_unreachable_goal_, true);
 
     //set up plan triple buffer
+    // 路径的三重缓存
     planner_plan_ = new std::vector<geometry_msgs::PoseStamped>();
     latest_plan_ = new std::vector<geometry_msgs::PoseStamped>();
     controller_plan_ = new std::vector<geometry_msgs::PoseStamped>();
 
     //set up the planner's thread
+    // 全局路径规划线程
     planner_thread_ = new boost::thread(boost::bind(&MoveBase::planThread, this));
 
     //for commanding the base
@@ -117,6 +120,7 @@ namespace move_base {
     private_nh.param("recovery_behavior_enabled", recovery_behavior_enabled_, true);
 
     //create the ros wrapper for the planner's costmap... and initializer a pointer we'll use with the underlying map
+    //  全局代价地图
     planner_costmap_ros_ = new costmap_2d::Costmap2DROS("global_costmap", tf_);
     planner_costmap_ros_->pause();
 
@@ -130,10 +134,12 @@ namespace move_base {
     }
 
     //create the ros wrapper for the controller's costmap... and initializer a pointer we'll use with the underlying map
+    // 局部代价地图
     controller_costmap_ros_ = new costmap_2d::Costmap2DROS("local_costmap", tf_);
     controller_costmap_ros_->pause();
 
     //create a local planner
+    // 局部路径规划器
     try {
       tc_ = blp_loader_.createInstance(local_planner);
       ROS_INFO("Created local_planner %s", local_planner.c_str());
@@ -144,10 +150,12 @@ namespace move_base {
     }
 
     // Start actively updating costmaps based on sensor data
+    // 代价地图(每一层进行处理)主要就是创建订阅者，比如static层订阅map，obstaic层订阅激光数据，接收到数据后进行相应处理。
     planner_costmap_ros_->start();
     controller_costmap_ros_->start();
 
     //advertise a service for getting a plan
+    // 提供一个路径规划服务(规划出路径，但不会执行这条路径)
     make_plan_srv_ = private_nh.advertiseService("make_plan", &MoveBase::planService, this);
 
     //advertise a service for clearing the costmaps
@@ -161,6 +169,7 @@ namespace move_base {
     }
 
     //load any user specified recovery behaviors, and if that fails load the defaults
+    // 恢复行为 的初始化
     if(!loadRecoveryBehaviors(private_nh)){
       loadDefaultRecoveryBehaviors();
     }
@@ -173,7 +182,7 @@ namespace move_base {
 
     //we're all set up now so we can start the action server
     as_->start();
-
+    // 动态参数配置
     dsrv_ = new dynamic_reconfigure::Server<move_base::MoveBaseConfig>(ros::NodeHandle("~"));
     dynamic_reconfigure::Server<move_base::MoveBaseConfig>::CallbackType cb = boost::bind(&MoveBase::reconfigureCB, this, _1, _2);
     dsrv_->setCallback(cb);
@@ -594,6 +603,7 @@ namespace move_base {
       if(gotPlan){
         ROS_DEBUG_NAMED("move_base_plan_thread","Got Plan with %zu points!", planner_plan_->size());
         //pointer swap the plans under mutex (the controller will pull from latest_plan_)
+        // 多线程下，加锁/使用指针交换，实现更全的更新路径规划结果
         std::vector<geometry_msgs::PoseStamped>* temp_plan = planner_plan_;
 
         lock.lock();
@@ -638,6 +648,7 @@ namespace move_base {
       lock.lock();
 
       //setup sleep interface if needed
+      // 定时/不断的规划新路径
       if(planner_frequency_ > 0){
         ros::Duration sleep_time = (start_time + ros::Duration(1.0/planner_frequency_)) - ros::Time::now();
         if (sleep_time > ros::Duration(0.0)){
@@ -770,6 +781,7 @@ namespace move_base {
       bool done = executeCycle(goal, global_plan);
 
       //if we're done, then we'll return from execute
+    //   result 为空
       if(done)
         return;
 
@@ -834,6 +846,8 @@ namespace move_base {
     }
 
     //if we have a new plan then grab it and give it to the controller
+    // 接受新目标点，完成路径规划后 new_global_plan_为true
+    // 新全局路径需要给 局部路径规划
     if(new_global_plan_){
       //make sure to set the new plan flag to false
       new_global_plan_ = false;
@@ -869,6 +883,7 @@ namespace move_base {
     }
 
     //the move_base state machine, handles the control logic for navigation
+    // 不管是否有新全局路径，自然始终会运行状态机
     switch(state_){
       //if we are in a planning state, then we'll attempt to make a plan
       case PLANNING:
@@ -881,6 +896,7 @@ namespace move_base {
         break;
 
       //if we're controlling, we'll attempt to find valid velocity commands
+    //   全局路径规划完成后进入局部/控制状态
       case CONTROLLING:
         ROS_DEBUG_NAMED("move_base","In controlling state.");
 
@@ -899,6 +915,7 @@ namespace move_base {
         }
 
         //check for an oscillation condition
+        //  检测振荡(出现振荡则切换到CLEARING恢复状态)
         if(oscillation_timeout_ > 0.0 &&
             last_oscillation_reset_ + ros::Duration(oscillation_timeout_) < ros::Time::now())
         {
